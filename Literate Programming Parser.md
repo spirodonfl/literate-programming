@@ -392,7 +392,7 @@ A zig version is coming so that a standalone binary can be executed without any 
 # TODOs
 
 * Have an option to take all blocks in current md file (they just have to be tagged with one var_name) and spit it all out, in order, to an output file. Additionally add a way to order the blocks numerically
-* What if you need to have the same variable name either in the same markdown file or in two or more different ones and they serve different purposes? Ideally, variable names should be unique to the markdown file. If you have a variable name used in multiple places, then you should be able to reference a different file to get the variable from. For example `{{{ some_block }}}` vs `{{{ relative/path/to/markdown.md:some_block`
+* What if you need to have the same variable name either in the same markdown file or in two or more different ones and they serve different purposes? Ideally, variable names should be unique to the markdown file. If you have a variable name used in multiple places, then you should be able to reference a different file to get the variable from. For example `{{{ some_block }}}` vs `{{{ relative/path/to/markdown.md:some_block }}}`
 * The "Source:" stuff needs to have better referencing. For example, what if your MD project/folder is in an ENTIRELY different place than the output folder which actually leads to...
 * Add an option to prefix the output path so you can generate output files in a completely different directory
 * Have options that live inside the "index" or "main" markdown file maybe in a code block so that you don't have to pass in CLI parameters... potentially
