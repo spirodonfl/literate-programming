@@ -22,7 +22,7 @@ Therefore, our code block class should at least have the variable name and the c
 
 There is a `source_file` parameter so we can also keep track of where the code came from when we generate our output files. This is a good way to see the origin of code if you were to only look at the output code and not the markdown. Consider it a `back reference` of sorts.
 
-``` javascript code_block_class
+``` javascript lit-type:code lit-name:code_block_class
 class CodeBlock {
     constructor(var_name, code, source_file) {
         this.var_name = var_name;
@@ -42,7 +42,7 @@ Instead, the first line needs to contain a `command` that it must output (or gen
 
 Therefore, our output class needs to know which file it's going to generate, what code will get generated and the source of the markdown file that generated the file.
 
-``` javascript output_block_class
+``` javascript lit-type:code lit-name:output_block_class
 class OutputBlock {
     constructor(file_path, code, source_file) {
         this.file_path = file_path;
@@ -52,18 +52,53 @@ class OutputBlock {
 }
 ```
 
+### Injection Blocks
+
+Sometimes you don't want to output a whole file. For example, you may have an existing codebase where you'd like to add some new code to some specific file(s) and would like to document those updates without having to import the entire codebase.
+
+Injections provide a way for you to add a reference in your existing code anywhere you like using the form `{{{ some_literate_variable_name_reference }}}` and you would use that to define a code block of the same name so that the code block is processed and injected into whatever file you define.
+
+Therefore, we can call these injection blocks and provide a class for them.
+
+``` javascript lit-type:code lit-name:injection_block_class
+class InjectionBlock {
+    constructor(var_name, file_path, code, source_file) {
+        this.file_path = file_path;
+        this.code = code;
+        this.source_file = source_file;
+        this.var_name = var_name;
+    }
+}
+```
+
+This class looks identical to the code block class but, when processed later on, we'll see an important distinction in its processing.
+### Paths
+
+We want to make sure that paths to our source files and output files are properly handled. This is a relatively straightforward function to handle in Node.
+
+``` javascript lit-type:code lit-name:handle_path_function
+function handlePath(inputPath, options) {
+    const isWindows = os.platform() === 'win32';
+    const pathModule = isWindows ? path.win32 : path;
+    let absolutePath;
+
+    // Check if the inputPath is already absolute
+    if (pathModule.isAbsolute(inputPath)) {
+        absolutePath = inputPath;
+    } else {
+        // Resolve relative path to absolute path
+        absolutePath = pathModule.resolve(options.folder_prefix, inputPath);
+    }
+
+    const relativePath = path.relative(options.folder_prefix, absolutePath);
+    return [absolutePath, relativePath];
+}
+```
 ### Variable referencing
 
 Code blocks that have already been defined in code blocks and given a variable name can be referenced in both *other* code blocks and output code blocks. This does mean you could end up with a circular reference scenario so take care not to do that. We're all adults here. You can do it.
 
 Your output block can therefore reference any code block as a variable to be replaced or injected. This markdown file is full of examples as to how this is done but you can see that the output block at the end of this markdown references all the other code blocks that are "named".
-### Injections
-
-Another option, as an alternative to generating full output files, is to create injection points in existing files.
-
-This still follows the code block and output block patterns (three ticks with extra information) but you pass in an "inject" command instead. Something like this: `[three ticks] inject some_var_name some_file_to_inject_into.js`
-
-In your `some_file_to_inject_into.js` file, you would be required to have a text like this: `{{{ some_var_name }}}` which is processed by the "tangler" and then replaced with whatever is inside the appropriate code block.
 ### Options
 
 We want the tangler to accept external options depending on the use case so we can make necessary adaptations as to how it works.
@@ -76,7 +111,7 @@ The `md_file` option let's us choose *one specific* markdown file to actually fu
 
 Note that at the end of this code block, we immediately instantiate `Options` and that's because we ideally only have one instance of that class. This isn't the most fool-proof way to ensure there's only one instance but it signifies its intent to any developer reading it.
 
-``` javascript options_class
+``` javascript lit-type:code lit-name:options_class
 class Options {
     constructor() {
         this.folder_prefix = './';
@@ -105,7 +140,7 @@ This function is going to run at the very end of our javascript file since it wi
 
 We start by reading in CLI parameters, if they've been passed in, and setting those values in the instantiated options class (which is named as `options`). Look at the [[#Options]] section for more information. We simply use Node's built-in "process" mechanism to read arguments from the command.
 
-``` javascript read_cli_parameters
+``` javascript lit-type:code lit-name:read_cli_parameters
 const args = process.argv.slice(2);
 args.forEach(arg => {
 	if (arg.startsWith("--folder-prefix=")) {
@@ -119,22 +154,25 @@ args.forEach(arg => {
 console.log(options);
 ```
 
-We need to store the code blocks and output blocks we find in arrays so we can iterate over them later. You can find more information about what these arrays will actually store -> [[#Code Blocks]] and [[#Output Blocks]].
+We need to store the code blocks and output blocks we find in arrays so we can iterate over them later. You can find more information about what these arrays will actually store -> [[#Code Blocks]], [[#Output Blocks]]  and [[#Injection Blocks]].
 
-``` javascript block_arrays
+``` javascript lit-type:code lit-name:block_arrays
 let code_blocks = [];
 let output_blocks = [];
+let injection_blocks = [];
 ```
 
 We want to call our `processDirectory` function and pass it the `folder_prefix` from the options class as well as the arrays to store things that are found during processing. You can find out more about this function [[#Process directory]].
 
-``` javascript call_process_directory
-processDirectory(options.folder_prefix, output_blocks, code_blocks);
+``` javascript lit-type:code lit-name:call_process_directory
+processDirectory(options.folder_prefix, output_blocks, code_blocks, injection_blocks);
 ```
 
 Assuming that `processDirectory` executed everything it needed to correctly, we should have an array of output blocks (most likely) which we then need to filter based on whether or not the `md_file` and / or `output_file` options were passed in. We only want to process output blocks that meet those optional criteria.
 
-``` javascript filter_output_blocks
+*TODO: Should we add a way to only process certain injection blocks here?*
+
+``` javascript lit-type:code lit-name:filter_output_blocks
 if (options.output_file) {
 	output_blocks = output_blocks.filter(block => block.file_path === options.output_file);
 }
@@ -145,11 +183,20 @@ if (options.md_file) {
 
 At this point, we have zero or more output blocks. Simply calling `forEach` iterates over any available output blocks in the array. Whenever we have one, we need to do a recursive check to see if the code blocks reference other code blocks. Thus, recursive.
 
-``` javascript iterate_output_blocks
+``` javascript lit-type:code lit-name:iterate_output_blocks
 console.log(`Found ${code_blocks.length} code blocks.`);
 console.log(`Found ${output_blocks.length} output blocks`);
 output_blocks.forEach(output => {
     {{{ process_output_block }}}
+});
+```
+
+We also want to iterate over our injection blocks and deal with those too.
+
+``` javascript lit-type:code lit-name:iterate_injection_blocks
+console.log(`Found ${injection_blocks.length} injection blocks`);
+injection_blocks.forEach(injection => {
+    {{{ process_injection_block }}}
 });
 ```
 
@@ -161,19 +208,40 @@ When we're done, we have to essentially generate the output file that's intended
 
 We ensure that the path to the directory actually exists and, if not, we create it. That's what `mkdirSync` is for. We then write the file with the fully generated output.
 
-``` javascript process_output_block
+``` javascript lit-type:code lit-name:process_output_block
 let updated_code = output.code;
 updated_code = replacePlaceholdersRecursively(updated_code, code_blocks);
 
-const output_file_path = path.join(options.folder_prefix, output.file_path);
-fs.mkdirSync(path.dirname(output_file_path), { recursive: true });
-fs.writeFileSync(output_file_path, updated_code);
-console.log(`Wrote file ${output_file_path}`);
+const output_file_path = handlePath(output.file_path, options);
+fs.mkdirSync(path.dirname(output_file_path[0]), { recursive: true });
+fs.writeFileSync(output_file_path[0], updated_code);
+console.log(`Wrote file ${output_file_path[0]}`);
+```
+
+Note that injection blocks are actually not included here because they are not part of an "output" process but, rather, a more surgical process that is executed when we process the injection block.
+
+*TODO: Clean this up now that you have handlePath as a function*
+
+``` javascript lit-type:code lit-name:process_injection_block
+const outputFilePath = path.join(options.folder_prefix, injection.file_path);
+fs.mkdirSync(path.dirname(outputFilePath), { recursive: true });
+if (fs.existsSync(outputFilePath)) {
+    const outputContent = fs.readFileSync(outputFilePath, 'utf8');
+    let placeholder = `{{{ ${injection.var_name} }}}`;
+    const relativeSourceFile = path.relative(process.cwd(), filePath);
+    let output = `// Source: ${relativeSourceFile}\n// Anchor: ${injection.var_name}\n`;
+    output += injection.code;
+    const updatedContent = outputContent.replace(placeholder, output);
+    fs.writeFileSync(outputFilePath, updatedContent);
+    console.log(`Injected code block '${injection.var_name}' into '${outputFilePath}'.`);
+} else {
+    console.error(`Error: Output file '${outputFilePath}' does not exist.`);
+}
 ```
 
 Our `main` function is therefore composed as such:
 
-``` javascript main_function
+``` javascript lit-type:code lit-name:main_function
 function main() {
     {{{ read_cli_parameters }}}
 
@@ -184,6 +252,8 @@ function main() {
     {{{ filter_output_blocks }}}
 
     {{{ iterate_output_blocks }}}
+
+    {{{ iterate_injection_blocks }}}
 }
 ```
 
@@ -197,7 +267,7 @@ Then we update the `code` parameter of the code block with the newly processed c
 
 We also do some simple checks to see what the leading spaces and/or tabs are for the current line so that we can try our best to retain proper indentation. Have a look at the [[#GOTCHAS]] section for a bit more information on this.
 
-``` javascript replace_placeholders_recursively_function
+``` javascript lit-type:code lit-name:replace_placeholders_recursively_function
 function replacePlaceholdersRecursively(code, codeBlocks) {
     let updated_code = code;
     let placeholdersFound = true;
@@ -243,15 +313,16 @@ function replacePlaceholdersRecursively(code, codeBlocks) {
 
 This function takes the current project path and iterates, recursively, over the directory structure in order to find all files ending in `md` (indicating they are a markdown file) and then runs the [[#Process markdown file]] function to grab their output and code blocks.
 
-``` javascript process_directory_function
-function processDirectory(dirPath, output_blocks, code_blocks) {
+``` javascript lit-type:code lit-name:process_directory_function
+function processDirectory(dirPath, output_blocks, code_blocks, injection_blocks) {
     fs.readdirSync(dirPath).forEach(entry => {
         const entryPath = path.join(dirPath, entry);
+        // console.log(handlePath(entryPath));
         const stat = fs.statSync(entryPath);
         if (stat.isDirectory()) {
-            processDirectory(entryPath, output_blocks, code_blocks);
+            processDirectory(entryPath, output_blocks, code_blocks, injection_blocks);
         } else if (entry.endsWith('.md')) {
-            processMarkdownFile(entryPath, output_blocks, code_blocks);
+            processMarkdownFile(entryPath, output_blocks, code_blocks, injection_blocks);
         }
     });
 }
@@ -267,7 +338,7 @@ The first line that initiates `in_code_block` to be true is parsed to see if it 
 
 Further lines become part of the code that we store for output purposes. That would be the `code_buffer`.
 
-``` javascript read_and_split_markdown_file
+``` javascript lit-type:code lit-name:read_and_split_markdown_file
 const content = fs.readFileSync(filePath, 'utf8');
 const lines = content.split('\n');
 let in_code_block = false;
@@ -275,15 +346,14 @@ let current_var_name = null;
 let current_output_file = null;
 let current_type = null;
 let code_buffer = '';
-let inject = false;
-let output = false;
+let is_lit = false;
 ```
 
 Right now, in a special case, if the code block is set to be "injected", we immediately process it. This is for use cases where you want to inject code into existing codebases.
 
 Any code block or output block that's processed ends up in the appropriate array with the appropriately parsed attributes for that block.
 
-``` javascript process_each_line
+``` javascript lit-type:code lit-name:process_each_line
 lines.forEach(line => {
 	if (line.startsWith('```') && !in_code_block) {
         {{{ code_block_started }}}
@@ -295,72 +365,74 @@ lines.forEach(line => {
 });
 ```
 
-When we detect that a code block has started, we simply take the line the block started in and create a split array based on spaces. This lets us see if there is more than the initial 3 backticks that initiated the code block.
+When we detect that a code block has started, we simply take the line the block started in and create a split array based on spaces. This lets us see if there is more than the initial 3 backticks that initiated the code block. We further split it up by looking for the "lit-" prefix identifying that we want this code block to be parsed by our literate programming tool.
 
-``` javascript code_block_started
+*Note: We need to trim extra spaces when we're doing JS splitting of patterns so we add that to the attribute*
+
+``` javascript lit-type:code lit-name:code_block_started
 in_code_block = true;
-const parts = line.split(' ');
-parts.shift();
-current_type = parts.shift();
-current_var_name = parts.shift();
-current_output_file = parts.shift();
-inject = parts.includes('inject');
+if (line.match('lit-', 'g')) {
+	is_lit = true;
+	let parts = line.split('lit-');
+	for (let p = 0; p < parts.length; ++p) {
+		let attributes = parts[p].split(':');
+		if (attributes.length < 2) { continue; }
+		if (attributes[0] === 'type') {
+			current_type = attributes[1].trim();
+		} else if (attributes[0] === 'name') {
+			current_var_name = attributes[1].trim();
+		} else if (attributes[0] === 'file') {
+			current_output_file = attributes.slice(1).join(':').trim();
+		}
+	}
+}
 ```
 
 When the code block ends (triggered by another 3 backticks) we can essentially bundle up the information we've gathered so far and take any appropriate actions. This code needs cleanup but you can tell that we deal with the "inject" and the "output" attributes. We instantiate any classes we need (right now, either the code or the output class) and we added it to the array of blocks so we can process them later on near the end of the "main" function.
 
-``` javascript code_block_ended
+``` javascript lit-type:code lit-name:code_block_ended
 in_code_block = false;
-if (inject) {
-	// Handle subfolder paths in the output file name
-	const outputFilePath = path.join(options.folder_prefix, current_output_file);
-	fs.mkdirSync(path.dirname(outputFilePath), { recursive: true });
-	if (fs.existsSync(outputFilePath)) {
-		const outputContent = fs.readFileSync(outputFilePath, 'utf8');
-		var placeholder = `{{{ ${current_var_name} }}}`;
+if (is_lit) {
+	if (current_type === 'injection') {
 		const relativeSourceFile = path.relative(process.cwd(), filePath);
-		var output = `// Source: ${relativeSourceFile}\n// Anchor: ${current_var_name}\n`;
-		output += code_buffer;
-		const updatedContent = outputContent.replace(placeholder, output);
-		fs.writeFileSync(outputFilePath, updatedContent);
-		console.log(`Injected code block '${current_var_name}' into '${outputFilePath}'.`);
-	} else {
-		console.error(`Error: Output file '${outputFilePath}' does not exist.`);
+		injection_blocks.push(new InjectionBlock(current_output_file, code_buffer, relativeSourceFile));
+	} else if (current_type === 'output') {
+		const relativeSourceFile = path.relative(process.cwd(), filePath);
+		output_blocks.push(new OutputBlock(current_output_file, code_buffer, relativeSourceFile));
+	} else if (current_type === 'code') {
+		const relativeSourceFile = path.relative(process.cwd(), filePath);
+		code_blocks.push(new CodeBlock(current_var_name, code_buffer, relativeSourceFile));
 	}
-} else if (current_type === 'output') {
-	// TODO: This is weird, fix it
-	current_output_file = current_var_name;
-	// Handle subfolder paths in the output file name
-	const outputFilePath = path.join(options.folder_prefix, current_output_file);
-	const relativeSourceFile = path.relative(process.cwd(), filePath);
-	output_blocks.push(new OutputBlock(current_output_file, code_buffer, relativeSourceFile));
-} else {
-	const relativeSourceFile = path.relative(process.cwd(), filePath);
-	code_blocks.push(new CodeBlock(current_var_name, code_buffer, relativeSourceFile));
 }
 current_var_name = null;
 current_output_file = null;
+current_type = null;
 code_buffer = '';
-inject = false;
+is_lit = false;
 ```
 
 TODOs
-* Extract the "inject" process into its own thing and process it as part of everything else (output and code blocks) instead of on-demand. This should allow you to merge repetitive code and make the loops simpler.
 * What if the line is just a code block and doesn't have anything more than the initial 3 backticks or the 3 backticks and maybe just a code "type" but *nothing more* ?
 
-``` javascript process_markdown_file_function
-function processMarkdownFile(filePath, output_blocks, code_blocks) {
+``` javascript lit-type:code lit-name:process_markdown_file_function
+function processMarkdownFile(filePath, output_blocks, code_blocks, injection_blocks) {
     {{{ read_and_split_markdown_file }}}
     
     {{{ process_each_line }}}
 }
 ```
 # PARSER OUTPUT
-``` output parser_v_0.2.js
-// Version: 0.2
+
+``` javascript lit-type:output lit-file:parser.js
+// Version: 0.3
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+
+{{{ handle_path_function }}}
+
+{{{ injection_block_class }}}
 
 {{{ code_block_class }}}
 
@@ -378,7 +450,6 @@ const path = require('path');
 
 main();
 ```
-
 # GOTCHAS
 
 Currently there is no only one thing you need to consider when using this tool. Spacing, tabs or general indentation. Depending on which editor you're using to do the markdown, the output of the file might have weird spacing and/or tabs. I have found that a good way to mitigate this is manually add in the spaces instead of using tabs as some markdown editors have weird symbols for tabs. The upside here is that the code is broken up so that you don't have to worry about the overall spacing of the file and adding in 2 - 4 spaces at the beginning of every line isn't that big a deal.
@@ -391,10 +462,14 @@ As per the pretty in-depth written coverage in this markdown file, you do have t
 A zig version is coming so that a standalone binary can be executed without any external dependencies.
 # TODOs
 
-* Have an option to take all blocks in current md file (they just have to be tagged with one var_name) and spit it all out, in order, to an output file. Additionally add a way to order the blocks numerically
-* What if you need to have the same variable name either in the same markdown file or in two or more different ones and they serve different purposes? Ideally, variable names should be unique to the markdown file. If you have a variable name used in multiple places, then you should be able to reference a different file to get the variable from. For example `{{{ some_block }}}` vs `{{{ relative/path/to/markdown.md:some_block }}}`
+* Have an option to take all blocks in current md file (they just have to be tagged with one var_name) and spit it all out, in order, to an output file. Additionally add a way to order the blocks numerically. This way you technically don't need an output file defined in a code block. You would still need the name and path of the output file though.
+* What if you need to have the same variable name either in the same markdown file or in two or more different ones and they serve different purposes? Ideally, variable names should be unique to the markdown file. If you have a variable name used in multiple places, then you should be able to reference a different file to get the variable from. For example `{{{ some_block }}}` vs `{{{ relative/path/to/markdown.md:some_block }}}`. By default, show a warning but simply take the last processed code block of duplicate variable names to be the finalized output of that variable.
 * The "Source:" stuff needs to have better referencing. For example, what if your MD project/folder is in an ENTIRELY different place than the output folder which actually leads to...
-* Add an option to prefix the output path so you can generate output files in a completely different directory
 * Have options that live inside the "index" or "main" markdown file maybe in a code block so that you don't have to pass in CLI parameters... potentially
 * If the file you're about to output does not match the existing file, get confirmation. Note that there's a difference between a change because you changed the markdown file vs a change because someone put code into the output file that is NOT part of your markdown file so you would have to do some kind of comparison between code that exists in the output file and code that doesn't. In reality what you really want to know is if the existing output file has code that does not exist in the intended output file and, maybe, if so, first ask for confirmation (or have an override/force option) and then store the removed lines in some kind of backup file to be restored later and pruned after a certain period of time. JUST IN CASE
 * Fix newlines at the end of every "block" unless we just keep that for some reason?
+* Add a section about use cases, specifically highlighting when you'd want to use this for an entire codebase or only portions of one and also when you'd want to use this to inject into an existing codebase.
+* Add way to import outside files (entirely or by line-number start/end) either
+	* Into a code block as if it were originally written there (so, in the markdown file)
+	* As a variable so it can be tangled up with other code blocks
+	* Add option to import code into markdown or to only do "ephemeral" import where the code is tangled but not saved in the markdown
