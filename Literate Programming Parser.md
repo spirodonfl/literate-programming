@@ -129,8 +129,18 @@ class Options {
         this.output_path = './';
         this.output_file = false;
         this.md_file = false;
-        this.whitelisted_files = [];
-        this.blacklisted_files = [];
+        this.ignore_files = [];
+        this.include_files = [];
+        this.output_source = true;
+        this.output_source_absolute_paths = false;
+    }
+
+    setOutputSourceAbsolutePaths(value) {
+        this.output_source_absolute_paths = value;
+    }
+
+    setOutputSource(value) {
+        this.output_source = value;
     }
 
     setInputPath(value) {
@@ -200,14 +210,86 @@ processDirectory(options.input_path, output_blocks, code_blocks, injection_block
 
 Assuming that `processDirectory` executed everything it needed to correctly, we should have an array of output blocks (most likely) which we then need to filter based on whether or not the `md_file` and / or `output_file` options were passed in. We only want to process output blocks that meet those optional criteria.
 
-*TODO: Should we add a way to only process certain injection blocks here?*
-
 ``` javascript lit-type:code lit-name:filter_output_blocks
-if (options.output_file) {
-	output_blocks = output_blocks.filter(block => block.file_path === options.output_file);
+if (options.include_files && options.include_files.length > 0) {
+    let new_output_blocks = [];
+    for (let block = 0; block < output_blocks.length; ++block) {
+        let output_block = output_blocks[block];
+        let source_file_path = handlePath(output_block.file_path, options);
+        let should_be_added = false;
+        for (let i = 0; i < options.include_files.length; ++i) {
+            let file = options.include_files[i];
+            let ignore_file_path = handlePath(file, options);
+            if (source_file_path[0] === ignore_file_path[0]) {
+                should_be_added = true;
+                break;
+            }
+        }
+        if (should_be_added) {
+            new_output_blocks.push(output_block);
+        }
+    }
+    output_blocks = new_output_blocks;
 }
-if (options.md_file) {
-	output_blocks = output_blocks.filter(block => block.source_file.match(options.md_file));
+if (options.ignore_files && options.ignore_files.length > 0) {
+    let new_output_blocks = [];
+    for (let block = 0; block < output_blocks.length; ++block) {
+        let output_block = output_blocks[block];
+        let source_file_path = handlePath(output_block.file_path, options);
+        let should_be_ignored = false;
+        for (let i = 0; i < options.ignore_files.length; ++i) {
+            let file = options.ignore_files[i];
+            let ignore_file_path = handlePath(file, options);
+            if (source_file_path[0] === ignore_file_path[0]) {
+                should_be_ignored = true;
+                break;
+            }
+        }
+        if (!should_be_ignored) {
+            new_output_blocks.push(output_block);
+        }
+    }
+    output_blocks = new_output_blocks;
+}
+if (options.include_files && options.include_files.length > 0) {
+    let new_output_blocks = [];
+    for (let block = 0; block < output_blocks.length; ++block) {
+        let output_block = output_blocks[block];
+        let source_file_path = handlePath(output_block.source_file, options);
+        let should_be_added = false;
+        for (let i = 0; i < options.include_files.length; ++i) {
+            let file = options.include_files[i];
+            let ignore_file_path = handlePath(file, options);
+            if (source_file_path[0] === ignore_file_path[0]) {
+                should_be_added = true;
+                break;
+            }
+        }
+        if (should_be_added) {
+            new_output_blocks.push(output_block);
+        }
+    }
+    output_blocks = new_output_blocks;
+}
+if (options.ignore_files && options.ignore_files.length > 0) {
+    let new_output_blocks = [];
+    for (let block = 0; block < output_blocks.length; ++block) {
+        let output_block = output_blocks[block];
+        let source_file_path = handlePath(output_block.source_file, options);
+        let should_be_ignored = false;
+        for (let i = 0; i < options.ignore_files.length; ++i) {
+            let file = options.ignore_files[i];
+            let ignore_file_path = handlePath(file, options);
+            if (source_file_path[0] === ignore_file_path[0]) {
+                should_be_ignored = true;
+                break;
+            }
+        }
+        if (!should_be_ignored) {
+            new_output_blocks.push(output_block);
+        }
+    }
+    output_blocks = new_output_blocks;
 }
 ```
 
@@ -261,6 +343,11 @@ We ensure that the path to the directory actually exists and, if not, we create 
 ``` javascript lit-type:code lit-name:process_output_block
 let updated_code = output.code;
 updated_code = replacePlaceholdersRecursively(updated_code, code_blocks);
+// TODO: Need a relative directory instead of absolute, in processMarkdown, around OutBlock class construct
+// Maybe at processDirectory, store a "last_directory" variable or something
+// if (!output.file_path.includes(path.sep)) {
+//     output.file_path = path.dirname(output.source_file) + path.sep + output.file_path;
+// }
 let output_file_path = handlePath(output.file_path, options);
 if (options.output_path !== './') {
     output_file_path = handlePath(options.output_path + output.file_path, options);
@@ -279,7 +366,11 @@ if (fs.existsSync(outputFilePath)) {
     const outputContent = fs.readFileSync(outputFilePath, 'utf8');
     let placeholder = `{{{ ${injection.var_name} }}}`;
     const relativeSourceFile = path.relative(process.cwd(), filePath);
-    let output = `// Source: ${relativeSourceFile}\n// Anchor: ${injection.var_name}\n`;
+    let output = '';
+    if (options.output_source) {
+        output += `// Source: ${relativeSourceFile}\n`;
+        output += `// Anchor: ${injection.var_name}\n`;
+    }
     output += injection.code;
     const updatedContent = outputContent.replace(placeholder, output);
     fs.writeFileSync(outputFilePath, updatedContent);
@@ -316,14 +407,30 @@ When we finally get around to processing the configuration blocks, we tackle eac
 
 ``` javascript lit-type:code lit-name:process_configuration_block
 const configuration_lines = configuration.code.split("\n");
-if (configuration.var_name === 'whitelist') {
-    options.whitelisted_files.push(line);
-} else if (configuration.var_name === 'blacklist') {
-    options.blacklisted_files.push(line);
+if (configuration.var_name === 'include') {
+    configuration_lines.forEach(conf_line => {
+        options.include_files.push(conf_line);
+    });
+} else if (configuration.var_name === 'ignore') {
+    configuration_lines.forEach(conf_line => {
+        options.ignore_files.push(conf_line);
+    });
 } else if (configuration.var_name === 'general') {
     configuration_lines.forEach(line => {
         const entry = line.split('=');
-        // General configurations will go here in the future
+        if (entry[0] === 'output_source') {
+            if (entry[1] === 'true') {
+                options.setOutputSource(true);
+            } else {
+                options.setOutputSource(false);
+            }
+        } else if (entry[0] === 'output_source_absolute_paths') {
+            if (entry[1] === 'true') {
+                options.setOutputSourceAbsolutePaths(true);
+            } else {
+                options.setOutputSourceAbsolutePaths(false);
+            }
+        }
     });
 }
 ```
@@ -333,6 +440,8 @@ Our `main` function is therefore composed as such:
 
 ``` javascript lit-type:code lit-name:main_function
 function main() {
+    {{{ helpers/Helpers.md:test_output }}}
+
     {{{ block_arrays }}}    
         
     {{{ read_cli_parameters }}}
@@ -376,7 +485,12 @@ function replacePlaceholdersRecursively(code, codeBlocks) {
                 const placeholder = `{{{ ${block.var_name} }}}`;
                 if (line.includes(placeholder)) {
                     placeholdersFound = true;
-                    let replacement = `// Source: ${block.source_file}\n// Anchor: ${block.var_name}\n${block.code}`;
+                    let replacement = '';
+                    if (options.output_source) {
+                        replacement += `// Source: ${block.source_file}\n`;
+                        replacement += `// Anchor: ${block.var_name}\n`;
+                    }
+                    replacement += `${block.code}`;
                     replacement = replacement.split('\n');
                     for (let r = 0; r < replacement.length; ++r) {
                         if (r === 0) { continue; }
@@ -411,6 +525,7 @@ function processDirectory(dirPath, output_blocks, code_blocks, injection_blocks,
         const entryPath = path.join(dirPath, entry);
         const stat = fs.statSync(entryPath);
         if (stat.isDirectory()) {
+            console.log('DIRECTORY: ' + entry);
             processDirectory(entryPath, output_blocks, code_blocks, injection_blocks, configuration_blocks);
         } else if (entry.endsWith('.md')) {
             processMarkdownFile(entryPath, output_blocks, code_blocks, injection_blocks, configuration_blocks);
@@ -508,7 +623,7 @@ function processMarkdownFile(filePath, output_blocks, code_blocks, injection_blo
 ```
 # PARSER OUTPUT
 
-``` javascript lit-type:output lit-file:parser.js
+``` javascript lit-type:output lit-file:parser_v_0.3.js
 // Version: 0.3
 
 const fs = require('fs');
@@ -551,18 +666,13 @@ A zig version is coming so that a standalone binary can be executed without any 
 
 * If you encounter the same variable name over and over
     * Overwrite with the latest found variable (code block)
-    * Allow referencing *specific* variables like this: `{{{ path/file.md:variable_name }}}`
-* Update the `Source:` output so it
-    * defaults to relative paths
-    * can be configured to output absolute paths
 * Configuration options (and implementations) for
     * backing up files if you are overriding
     * ask for confirmations before overriding
 * Fix newlines at the end of every "block" unless we just keep that for some reason?
 * Add a section about use cases, specifically highlighting when you'd want to use this for an entire codebase or only portions of one and also when you'd want to use this to inject into an existing codebase.
-* Add way to import outside files (entirely or by line-number start/end) either
-	* Into a code block as if it were originally written there (so, in the markdown file)
-	* As a variable so it can be tangled up with other code blocks
-	* Add option to import code into markdown or to only do "ephemeral" import where the code is tangled but not saved in the markdown
 * Fix issues with indents / spacing
 * Cleanup the `process_injection_block` with the `handlePath` function available now
+* Might need a way to process only a certain set of injection blocks
+* A configuration option to only run "imports"
+* Update import options to include a variable reference in case you want to do an immediate import to code block conversion with a variable name reference

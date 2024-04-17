@@ -35,7 +35,7 @@ class Options {
     setFolderPrefix(value) {
         this.folder_prefix = value;
     }
-
+// lit-tag: to_import
     setOutputFile(value) {
         this.output_file = value;
     }
@@ -43,6 +43,7 @@ class Options {
     setMdFile(value) {
         this.md_file = value;
     }
+// lit-tag: to_import
 }
 let options = new Options();
 
