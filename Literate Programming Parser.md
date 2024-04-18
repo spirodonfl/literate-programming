@@ -23,6 +23,7 @@ Therefore, our code block class should at least have the variable name and the c
 There is a `source_file` parameter so we can also keep track of where the code came from when we generate our output files. This is a good way to see the origin of code if you were to only look at the output code and not the markdown. Consider it a `back reference` of sorts.
 
 ``` javascript lit-type:code lit-name:code_block_class
+// Some comment here
 class CodeBlock {
     constructor(var_name, code, source_file) {
         this.var_name = var_name;
