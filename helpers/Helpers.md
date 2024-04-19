@@ -42,8 +42,15 @@ class Options {
 ```
 
 ```
-path=parser_v_0.1.js
-tag=to_import
+
+    setOutputFile(value) {
+        this.output_file = value;
+    }
+    
+    setMdFile(value) {
+        this.md_file = value;
+    }
+
 ```
 
 ```
