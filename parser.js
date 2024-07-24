@@ -1,10 +1,9 @@
-// Version: 0.3
-
+// Version: 0.4
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-console.log('Current working directory: ' + process.cwd());
+console.log('Current working directory:' + process.cwd());
 
 class MDCodeBlock {
     constructor() {
@@ -34,45 +33,36 @@ class MDCodeBlock {
 class ConfigurationBlock extends MDCodeBlock {
     constructor(var_name) {
         super();
-
         this.var_name = var_name;
     }
 }
 
-
 class InjectionBlock extends MDCodeBlock {
     constructor(var_name, file_path) {
         super();
-
         this.file_path = file_path;
         this.var_name = var_name;
     }
 }
 
-
 class CodeBlock extends MDCodeBlock {
     constructor(var_name) {
         super();
-
         this.var_name = var_name;
     }
 }
 
-
 class OutputBlock extends MDCodeBlock {
     constructor(file_path, relative_directory) {
         super();
-
         this.file_path = file_path;
         this.relative_directory = relative_directory;
     }
 }
 
-
 class ImportBlock extends MDCodeBlock {
     constructor() {
         super();
-
         this.path = null;
         this.line_start = null;
         this.line_end = null;
@@ -99,12 +89,10 @@ class ImportBlock extends MDCodeBlock {
 class ReferenceBlock extends MDCodeBlock {
     constructor(var_name) {
         super();
-
         this.path = null;
         this.line_start = null;
         this.line_end = null;
         this.tag = null;
-
         this.var_name = var_name;
     }
 
@@ -125,6 +113,20 @@ class ReferenceBlock extends MDCodeBlock {
     }
 }
 
+class CustomBlock extends MDCodeBlock {
+    constructor(block_name) {
+        super();
+        this.block_name = block_name;
+    }
+}
+
+class PullFromBlock extends MDCodeBlock {
+    constructor(file_path, block_name) {
+        super();
+        this.file_path = file_path;
+        this.block_name = block_name;
+    }
+}
 
 class Options {
     constructor() {
@@ -162,19 +164,21 @@ class Options {
     setOutputFile(value) {
         this.output_file = value;
     }
-    
+
     setMdFile(value) {
         this.md_file = value;
     }
 }
-let options = new Options();
 
+let options = new Options();
 let code_blocks = [];
 let output_blocks = [];
 let injection_blocks = [];
 let configuration_blocks = [];
 let import_blocks = [];
 let reference_blocks = [];
+let custom_blocks = [];
+let pull_from_blocks = [];
 
 function processInjectionBlocks() {
     console.log(`Found ${injection_blocks.length} injection blocks`);
@@ -220,13 +224,14 @@ function processOutputBlocks() {
         fs.mkdirSync(path.dirname(output_file_path[0]), { recursive: true });
         fs.writeFileSync(output_file_path[0], updated_code);
         console.log(`Wrote file ${output_file_path[0]}`);
-        
     });
 }
 
 function filterOutputBlocks(filter_type, path_type) {
     let cross_reference = (filter_type === 0) ? options.include_files : options.ignore_files;
-    if (cross_reference.length === 0) { return false; }
+    if (cross_reference.length === 0) {
+        return false;
+    }
     let new_output_blocks = [];
     for (let block = 0; block < output_blocks.length; ++block) {
         let output_block = output_blocks[block];
@@ -266,9 +271,7 @@ function processImportBlocks() {
                 import_block.setTag(config[1]);
             }
         });
-
         let import_content = readContent(import_block);
-
         if (import_content !== '') {
             let source_file = import_block.source_file;
             let source_file_path = handlePath(source_file, options);
@@ -287,8 +290,8 @@ function processImportBlocks() {
                 }
                 new_source_content += source_lines[i] + '\n';
             }
-            fs.writeFileSync(source_file_path[0], new_source_content);
-            console.log(`Imported code block '${import_block.path}' into '${source_file_path[0]}'.`);
+            fs.writeFileSync(source_file_path, new_source_content);
+            console.log(`Imported code block '${import_block.path}' into '${source_file_path}'.`);
         }
     });
 }
@@ -299,13 +302,13 @@ function processReferenceBlocks() {
         let reference_block_lines = reference_block.code.split('\n');
         reference_block_lines.forEach(line => {
             const config = line.split('=');
-            if (config[0] === 'path') {
+            if (config === 'path') {
                 reference_block.setPath(config[1]);
-            } else if (config[0] === 'line_start') {
+            } else if (config === 'line_start') {
                 reference_block.setLineStart(config[1]);
-            } else if (config[0] === 'line_end') {
+            } else if (config === 'line_end') {
                 reference_block.setLineEnd(config[1]);
-            } else if (config[0] === 'tag') {
+            } else if (config === 'tag') {
                 reference_block.setTag(config[1]);
             }
         });
@@ -327,13 +330,13 @@ function processConfigurationBlocks() {
         } else if (configuration.var_name === 'general') {
             configuration_lines.forEach(line => {
                 const entry = line.split('=');
-                if (entry[0] === 'output_source') {
+                if (entry === 'output_source') {
                     if (entry[1] === 'true') {
                         options.setOutputSource(true);
                     } else {
                         options.setOutputSource(false);
                     }
-                } else if (entry[0] === 'output_source_absolute_paths') {
+                } else if (entry === 'output_source_absolute_paths') {
                     if (entry[1] === 'true') {
                         options.setOutputSourceAbsolutePaths(true);
                     } else {
@@ -342,16 +345,15 @@ function processConfigurationBlocks() {
                 }
             });
         }
-        
     });
 }
 
 function readConfigMarkdown() {
     const config_path = handlePath('config.md', options);
-    if (fs.existsSync(config_path[0])) {
+    if (fs.existsSync(config_path)) {
         try {
-            console.log('Found a config.md file. Processing...');
-            processMarkdownFile(config_path[0], '');
+            console.log('Found a config.md file.... Processing...');
+            processMarkdownFile(config_path, '');
         } catch (err) {
             console.error('Could not read config.md file');
         }
@@ -374,27 +376,27 @@ function readCLIArguments() {
 
 function readContent(block) {
     const import_path = handlePath(block.path, options);
-    let import_lines = fs.readFileSync(import_path[0], 'utf8').split('\n');
+    let import_lines = fs.readFileSync(import_path, 'utf8').split('\n');
     let import_start = 0;
     let import_end = import_lines.length;
     let import_content = '';
+
     if (block.tag) {
         let found_tag = false;
         for (let i = 0; i < import_lines.length; ++i) {
-            if (import_lines[i].includes('lit-tag: ' + block.tag) && !found_tag) {
+            if (import_lines[i].includes('lit-tag:' + block.tag) && !found_tag) {
                 found_tag = true;
                 import_start = i;
-            } else if (import_lines[i].includes('lit-tag: ' + block.tag) && found_tag) {
+            } else if (import_lines[i].includes('lit-tag:' + block.tag) && found_tag) {
                 found_tag = false;
                 import_end = i;
             }
-
             if (found_tag && i >= (import_start + 1)) {
                 import_content += import_lines[i] + '\n';
             }
         }
         if (!found_tag) {
-            console.error(`Could not find tag '${block.tag}' in file '${import_path[0]}'`);
+            console.error(`Could not find tag '${block.tag}' in file '${import_path}'`);
         }
     } else {
         if (block.line_start) {
@@ -407,23 +409,20 @@ function readContent(block) {
             import_content += import_lines[i] + '\n';
         }
     }
-
     return import_content;
 }
-
 
 function replacePlaceholdersRecursively(code) {
     let updated_code = code;
     let placeholdersFound = true;
-
     while (placeholdersFound) {
         placeholdersFound = false;
-
         let lines = updated_code.split('\n');
         for (let l = 0; l < lines.length; ++l) {
             let line = lines[l];
-            const leading_spaces = line.match(/^\s*/)[0].length;
-            const leading_tabs = line.match(/^\t*/)[0].length;
+            const leading_spaces = line.match(/^\s*/).length;
+            const leading_tabs = line.match(/^\t*/).length;
+
             reference_blocks.forEach(block => {
                 const placeholder = `{{{ ${block.var_name} }}}`;
                 if (line.includes(placeholder)) {
@@ -431,7 +430,7 @@ function replacePlaceholdersRecursively(code) {
                     let replacement = '';
                     if (options.output_source) {
                         if (options.output_source_absolute_paths) {
-                            replacement += `// Source: ${handlePath(block.source_file, options)[0]}\n`;
+                            replacement += `// Source: ${handlePath(block.source_file, options)}\n`;
                         } else {
                             replacement += `// Source: ${block.source_file}\n`;
                         }
@@ -443,18 +442,15 @@ function replacePlaceholdersRecursively(code) {
                     for (let r = 0; r < replacement.length; ++r) {
                         if (r === 0) { continue; }
                         let replacement_line = '';
-                        for (let space = 0; space < leading_spaces; ++space) {
-                            replacement_line += ' ';
-                        }
-                        for (let tab = 0; tab < leading_tabs; ++tab) {
-                            replacement_line += '\t';
-                        }
+                        for (let space = 0; space < leading_spaces; ++space) { replacement_line += ' '; }
+                        for (let tab = 0; tab < leading_tabs; ++tab) { replacement_line += '\t'; }
                         replacement_line += replacement[r];
                         replacement[r] = replacement_line;
                     }
                     lines[l] = line.replace(placeholder, replacement.join('\n'));
                 }
             });
+
             code_blocks.forEach(block => {
                 const placeholder = `{{{ ${block.var_name} }}}`;
                 if (line.includes(placeholder)) {
@@ -462,7 +458,7 @@ function replacePlaceholdersRecursively(code) {
                     let replacement = '';
                     if (options.output_source) {
                         if (options.output_source_absolute_paths) {
-                            replacement += `// Source: ${handlePath(block.source_file, options)[0]}\n`;
+                            replacement += `// Source: ${handlePath(block.source_file, options)}\n`;
                         } else {
                             replacement += `// Source: ${block.source_file}\n`;
                         }
@@ -473,51 +469,83 @@ function replacePlaceholdersRecursively(code) {
                     for (let r = 0; r < replacement.length; ++r) {
                         if (r === 0) { continue; }
                         let replacement_line = '';
-                        for (let space = 0; space < leading_spaces; ++space) {
-                            replacement_line += ' ';
-                        }
-                        for (let tab = 0; tab < leading_tabs; ++tab) {
-                            replacement_line += '\t';
-                        }
+                        for (let space = 0; space < leading_spaces; ++space) { replacement_line += ' '; }
+                        for (let tab = 0; tab < leading_tabs; ++tab) { replacement_line += '\t'; }
                         replacement_line += replacement[r];
                         replacement[r] = replacement_line;
                     }
                     lines[l] = line.replace(placeholder, replacement.join('\n'));
                 }
-                const source_placeholder = `{{{ ${block.source_file}:${block.var_name} }}}`;
-                if (line.includes(source_placeholder)) {
-                    placeholdersFound = true;
-                    let replacement = '';
-                    if (options.output_source) {
-                        if (options.output_source_absolute_paths) {
-                            replacement += `// Source: ${handlePath(block.source_file, options)[0]}\n`;
-                        } else {
-                            replacement += `// Source: ${block.source_file}\n`;
-                        }
-                        replacement += `// Anchor: ${block.var_name}\n`;
-                    }
-                    replacement += `${block.code}`;
-                    replacement = replacement.split('\n');
-                    for (let r = 0; r < replacement.length; ++r) {
-                        if (r === 0) { continue; }
-                        let replacement_line = '';
-                        for (let space = 0; space < leading_spaces; ++space) {
-                            replacement_line += ' ';
-                        }
-                        for (let tab = 0; tab < leading_tabs; ++tab) {
-                            replacement_line += '\t';
-                        }
-                        replacement_line += replacement[r];
-                        replacement[r] = replacement_line;
-                    }
-                    lines[l] = line.replace(source_placeholder, replacement.join('\n'));
-                }
             });
+
+            const source_placeholder = `{{{ ${block.source_file}:${block.var_name} }}}`;
+            if (line.includes(source_placeholder)) {
+                placeholdersFound = true;
+                let replacement = '';
+                if (options.output_source) {
+                    if (options.output_source_absolute_paths) {
+                        replacement += `// Source: ${handlePath(block.source_file, options)}\n`;
+                    } else {
+                        replacement += `// Source: ${block.source_file}\n`;
+                    }
+                    replacement += `// Anchor: ${block.var_name}\n`;
+                }
+                replacement += `${block.code}`;
+                replacement = replacement.split('\n');
+                for (let r = 0; r < replacement.length; ++r) {
+                    if (r === 0) { continue; }
+                    let replacement_line = '';
+                    for (let space = 0; space < leading_spaces; ++space) { replacement_line += ' '; }
+                    for (let tab = 0; tab < leading_tabs; ++tab) { replacement_line += '\t'; }
+                    replacement_line += replacement[r];
+                    replacement[r] = replacement_line;
+                }
+                lines[l] = line.replace(source_placeholder, replacement.join('\n'));
+            }
         }
         updated_code = lines.join('\n');
     }
-
     return updated_code;
+}
+
+function processPullFromBlocks() {
+    console.log(`Processing ${pull_from_blocks.length} pull_from blocks`);
+    pull_from_blocks.forEach(pull_from => {
+        const sourceFilePath = pull_from.source_file;
+        let pullFilePath;
+
+        if (path.isAbsolute(pull_from.file_path)) {
+            // Handle absolute path
+            pullFilePath = pull_from.file_path;
+        } else if (pull_from.file_path.startsWith('.')) {
+            // Handle relative path
+            pullFilePath = path.resolve(path.dirname(sourceFilePath), pull_from.file_path);
+        } else {
+            // Handle local path (in the same directory as the source file)
+            pullFilePath = path.join(path.dirname(sourceFilePath), pull_from.file_path);
+        }
+        
+        if (fs.existsSync(pullFilePath)) {
+            const sourceContent = fs.readFileSync(sourceFilePath, 'utf8');
+            const pullContent = fs.readFileSync(pullFilePath, 'utf8');
+            
+            const blockToInsert = custom_blocks.find(block => 
+                block.source_file === pullFilePath && block.block_name === pull_from.block_name
+            );
+
+            if (blockToInsert) {
+                const placeholder = `<!-- pull_from: ${pull_from.file_path}, block: ${pull_from.block_name} -->`;
+                const replacement = `<!-- pull_from: ${pull_from.file_path}, block: ${pull_from.block_name} -->\n${blockToInsert.code}<!-- end_pull_from -->`;
+                const updatedContent = sourceContent.replace(placeholder, replacement);
+                fs.writeFileSync(sourceFilePath, updatedContent);
+                console.log(`Pulled block '${pull_from.block_name}' from '${pullFilePath}' into '${sourceFilePath}'.`);
+            } else {
+                console.error(`Error: Block '${pull_from.block_name}' not found in '${pullFilePath}'.`);
+            }
+        } else {
+            console.error(`Error: Pull file '${pullFilePath}' does not exist.`);
+        }
+    });
 }
 
 
@@ -534,136 +562,70 @@ function processDirectory(dirPath, current_project_directory) {
     });
 }
 
-
 function processMarkdownFile(filePath, current_project_directory) {
     const content = fs.readFileSync(filePath, 'utf8');
     const lines = content.split('\n');
-    let in_code_block = false;
-    let current_var_name = null;
-    let current_output_file = null;
-    let current_type = null;
-    let code_buffer = '';
+    let in_block = false;
+    let current_block_name = null;
+    let current_block_type = null;
+    let block_buffer = '';
     let current_start_line = 0;
-    let is_lit = false;
     let current_line = 0;
-    
+
     lines.forEach(line => {
         ++current_line;
-        if (line.startsWith('```') && !in_code_block) {
-            in_code_block = true;
-            if (line.match('lit-', 'g')) {
-                is_lit = true;
-                current_start_line = current_line;
-                let parts = line.split('lit-');
-                for (let p = 0; p < parts.length; ++p) {
-                    let attributes = parts[p].split(':');
-                    if (attributes.length < 2) { continue; }
-                    if (attributes[0] === 'type') {
-                        current_type = attributes[1].trim();
-                    } else if (attributes[0] === 'name') {
-                        current_var_name = attributes[1].trim();
-                    } else if (attributes[0] === 'file') {
-                        current_output_file = attributes.slice(1).join(':').trim();
-                    }
-                }
-            }
-            
-        } else if (line.startsWith('```') && in_code_block) {
-            in_code_block = false;
-            if (is_lit) {
-                if (current_type === 'injection') {
-                    let block = new InjectionBlock(current_var_name, current_output_file);
-                    block.setSourceFile(filePath);
-                    block.setCode(code_buffer);
-                    block.setStartLineNumber(current_start_line);
-                    block.setEndLineNumber(current_line);
-                    injection_blocks.push(block);
-                } else if (current_type === 'output') {
-                    let block = new OutputBlock(current_output_file, current_project_directory);
-                    block.setSourceFile(filePath);
-                    block.setCode(code_buffer);
-                    block.setStartLineNumber(current_start_line);
-                    block.setEndLineNumber(current_line);
-                    output_blocks.push(block);
-                } else if (current_type === 'code') {
-                    let block = new CodeBlock(current_var_name);
-                    block.setSourceFile(filePath);
-                    block.setCode(code_buffer);
-                    block.setStartLineNumber(current_start_line);
-                    block.setEndLineNumber(current_line);
-                    code_blocks.push(block);
-                } else if (current_type === 'config') {
-                    let block = new ConfigurationBlock(current_var_name);
-                    block.setSourceFile(filePath);
-                    block.setCode(code_buffer);
-                    block.setStartLineNumber(current_start_line);
-                    block.setEndLineNumber(current_line);
-                    configuration_blocks.push(block);
-                } else if (current_type === 'import') {
-                    let block = new ImportBlock();
-                    block.setSourceFile(filePath);
-                    block.setCode(code_buffer);
-                    block.setStartLineNumber(current_start_line);
-                    block.setEndLineNumber(current_line);
-                    import_blocks.push(block);
-                } else if (current_type === 'reference') {
-                    let block = new ReferenceBlock(current_var_name);
-                    block.setSourceFile(filePath);
-                    block.setCode(code_buffer);
-                    block.setStartLineNumber(current_start_line);
-                    block.setEndLineNumber(current_line);
-                    reference_blocks.push(block);
-                }
-            }
-            current_var_name = null;
-            current_output_file = null;
-            current_type = null;
-            code_buffer = '';
+
+        if (line.startsWith('<!-- block:') && !in_block) {
+            in_block = true;
+            current_start_line = current_line;
+            const parts = line.split('block:');
+            current_block_name = parts[1].trim().replace('-->', '').trim();
+            current_block_type = 'custom';
+        } else if (line.startsWith('<!-- end_block -->') && in_block) {
+            in_block = false;
+            const block = new CustomBlock(current_block_name);
+            block.setSourceFile(filePath);
+            block.setCode(block_buffer);
+            block.setStartLineNumber(current_start_line);
+            block.setEndLineNumber(current_line);
+            custom_blocks.push(block);
+            current_block_name = null;
+            current_block_type = null;
+            block_buffer = '';
             current_start_line = 0;
-            is_lit = false;
-            
-        } else if (in_code_block) {
-            code_buffer += line + '\n';
+        } else if (line.startsWith('<!-- pull_from:')) {
+            const parts = line.split('pull_from:')[1].split(',');
+            const file_path = parts[0].trim();
+            const block_name = parts[1].split('block:')[1].trim().replace('-->', '').trim();
+            const pull_from_block = new PullFromBlock(file_path, block_name);
+            pull_from_block.setSourceFile(filePath);
+            pull_from_block.setStartLineNumber(current_line);
+            pull_from_block.setEndLineNumber(current_line);
+            pull_from_blocks.push(pull_from_block);
+        } else if (in_block) {
+            block_buffer += line + '\n';
         }
-    });   
+    });
 }
 
-function handlePath(inputPath, options) {
-    const isWindows = os.platform() === 'win32';
-    const pathModule = isWindows ? path.win32 : path;
-    let absolutePath;
 
-    if (pathModule.isAbsolute(inputPath)) {
-        absolutePath = inputPath;
+function handlePath(file_path, options) {
+    if (os.platform() === 'win32') {
+        return [file_path.replace(/\//g, '\\')];
     } else {
-        absolutePath = pathModule.resolve(options.input_path, inputPath);
+        return [file_path];
     }
-
-    const relativePath = path.relative(options.input_path, absolutePath);
-    return [absolutePath, relativePath];
 }
 
-function main() {    
-    readCLIArguments();
-    
-    readConfigMarkdown();
-    
-    processConfigurationBlocks();
+// Main execution
+readConfigMarkdown();
+readCLIArguments();
+processDirectory(options.input_path, '');
+processConfigurationBlocks();
+processPullFromBlocks();
+processInjectionBlocks();
+processImportBlocks();
+processReferenceBlocks();
+processOutputBlocks();
 
-    processDirectory(options.input_path, '');
-
-    processImportBlocks();
-
-    processReferenceBlocks();
-    
-    filterOutputBlocks(0, 0);
-    filterOutputBlocks(1, 0);
-    filterOutputBlocks(0, 1);
-    filterOutputBlocks(1, 1);
-    
-    processOutputBlocks();
-
-    processInjectionBlocks();
-}
-
-main();
+console.log('Processing complete.');
