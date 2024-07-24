@@ -1,4 +1,6 @@
 // Version: 0.4
+// Author: Spiro Floropoulos
+// Source: https://github.com/spirodonfl/literate-programming
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -170,6 +172,7 @@ class Options {
     }
 }
 
+
 let options = new Options();
 let code_blocks = [];
 let output_blocks = [];
@@ -321,35 +324,40 @@ function processConfigurationBlocks() {
         const configuration_lines = configuration.code.split("\n");
         if (configuration.var_name === 'include') {
             configuration_lines.forEach(conf_line => {
-                options.include_files.push(conf_line);
+                let resolved_path = conf_line.trim();
+                if (!path.isAbsolute(resolved_path)) {
+                    resolved_path = path.resolve(path.dirname(configuration.source_file), resolved_path);
+                }
+                options.include_files.push(resolved_path);
             });
         } else if (configuration.var_name === 'ignore') {
             configuration_lines.forEach(conf_line => {
-                options.ignore_files.push(conf_line);
+                let resolved_path = conf_line.trim();
+                if (!path.isAbsolute(resolved_path)) {
+                    resolved_path = path.resolve(path.dirname(configuration.source_file), resolved_path);
+                }
+                options.ignore_files.push(resolved_path);
             });
         } else if (configuration.var_name === 'general') {
             configuration_lines.forEach(line => {
                 const entry = line.split('=');
-                if (entry === 'output_source') {
-                    if (entry[1] === 'true') {
-                        options.setOutputSource(true);
-                    } else {
-                        options.setOutputSource(false);
-                    }
-                } else if (entry === 'output_source_absolute_paths') {
-                    if (entry[1] === 'true') {
-                        options.setOutputSourceAbsolutePaths(true);
-                    } else {
-                        options.setOutputSourceAbsolutePaths(false);
-                    }
+                if (entry[0] === 'output_source') {
+                    options.setOutputSource(entry[1] === 'true');
+                } else if (entry[0] === 'output_source_absolute_paths') {
+                    options.setOutputSourceAbsolutePaths(entry[1] === 'true');
                 }
             });
         }
     });
 }
 
+
 function readConfigMarkdown() {
-    const config_path = handlePath('config.md', options);
+    let config_path = handlePath('config.md', options);
+    if (config_path.length > 0) {
+        config_path = config_path[0];
+    }
+    console.log('Searching for:', config_path);
     if (fs.existsSync(config_path)) {
         try {
             console.log('Found a config.md file.... Processing...');
@@ -515,13 +523,10 @@ function processPullFromBlocks() {
         let pullFilePath;
 
         if (path.isAbsolute(pull_from.file_path)) {
-            // Handle absolute path
             pullFilePath = pull_from.file_path;
         } else if (pull_from.file_path.startsWith('.')) {
-            // Handle relative path
             pullFilePath = path.resolve(path.dirname(sourceFilePath), pull_from.file_path);
         } else {
-            // Handle local path (in the same directory as the source file)
             pullFilePath = path.join(path.dirname(sourceFilePath), pull_from.file_path);
         }
         
@@ -535,10 +540,16 @@ function processPullFromBlocks() {
 
             if (blockToInsert) {
                 const placeholder = `<!-- pull_from: ${pull_from.file_path}, block: ${pull_from.block_name} -->`;
-                const replacement = `<!-- pull_from: ${pull_from.file_path}, block: ${pull_from.block_name} -->\n${blockToInsert.code}<!-- end_pull_from -->`;
-                const updatedContent = sourceContent.replace(placeholder, replacement);
-                fs.writeFileSync(sourceFilePath, updatedContent);
-                console.log(`Pulled block '${pull_from.block_name}' from '${pullFilePath}' into '${sourceFilePath}'.`);
+                const processedPlaceholder = `<!-- pull_from: ${pull_from.file_path}, block: ${pull_from.block_name}, processed: true -->`;
+                
+                if (sourceContent.includes(placeholder) && !sourceContent.includes(processedPlaceholder)) {
+                    const replacement = `${processedPlaceholder}\n${blockToInsert.code}`;
+                    const updatedContent = sourceContent.replace(placeholder, replacement);
+                    fs.writeFileSync(sourceFilePath, updatedContent);
+                    console.log(`Pulled block '${pull_from.block_name}' from '${pullFilePath}' into '${sourceFilePath}'.`);
+                } else {
+                    console.log(`Block '${pull_from.block_name}' from '${pullFilePath}' already processed in '${sourceFilePath}'.`);
+                }
             } else {
                 console.error(`Error: Block '${pull_from.block_name}' not found in '${pullFilePath}'.`);
             }
@@ -572,7 +583,7 @@ function processMarkdownFile(filePath, current_project_directory) {
     let current_start_line = 0;
     let current_line = 0;
 
-    lines.forEach(line => {
+    lines.forEach((line, index) => {
         ++current_line;
 
         if (line.startsWith('<!-- block:') && !in_block) {
@@ -593,14 +604,14 @@ function processMarkdownFile(filePath, current_project_directory) {
             current_block_type = null;
             block_buffer = '';
             current_start_line = 0;
-        } else if (line.startsWith('<!-- pull_from:')) {
+        } else if (line.startsWith('<!-- pull_from:') && !line.includes('processed: true')) {
             const parts = line.split('pull_from:')[1].split(',');
             const file_path = parts[0].trim();
             const block_name = parts[1].split('block:')[1].trim().replace('-->', '').trim();
             const pull_from_block = new PullFromBlock(file_path, block_name);
             pull_from_block.setSourceFile(filePath);
-            pull_from_block.setStartLineNumber(current_line);
-            pull_from_block.setEndLineNumber(current_line);
+            pull_from_block.setStartLineNumber(index + 1);
+            pull_from_block.setEndLineNumber(index + 1);
             pull_from_blocks.push(pull_from_block);
         } else if (in_block) {
             block_buffer += line + '\n';
@@ -609,13 +620,17 @@ function processMarkdownFile(filePath, current_project_directory) {
 }
 
 
-function handlePath(file_path, options) {
-    if (os.platform() === 'win32') {
-        return [file_path.replace(/\//g, '\\')];
+function handlePath(inputPath, options) {
+    const isWindows = os.platform() === 'win32';
+    const pathModule = isWindows ? path.win32 : path.posix;
+
+    if (pathModule.isAbsolute(inputPath)) {
+        return [inputPath];
     } else {
-        return [file_path];
+        return [pathModule.resolve(options.input_path, inputPath)];
     }
 }
+
 
 // Main execution
 readConfigMarkdown();
@@ -629,3 +644,4 @@ processReferenceBlocks();
 processOutputBlocks();
 
 console.log('Processing complete.');
+
