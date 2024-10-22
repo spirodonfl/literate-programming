@@ -5,6 +5,11 @@ var fs = require('fs')
 var path = require('path')
 var os = require('os')
 
+// TODO: Error out on blocks with no end
+// TODO: Nested blocks
+// TODO: Pull from source code (by lines & lit tags in comments)
+// TODO: Inject into source code (by lines & lit tags in comments)
+
 // Set this to false to disable logs
 const DEBUG = false;
 
